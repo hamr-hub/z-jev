@@ -1,0 +1,36 @@
+# Build-time exclusions to keep the image lean.
+
+# VCS / CI
+.git
+.gitignore
+.github
+
+# Python caches / build artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+build
+dist
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+
+# Local environments / IDEs
+.venv
+venv
+env
+.vscode
+.idea
+.DS_Store
+
+# Test outputs (heavy checkpoints land here; mount via volume in compose)
+checkpoints/
+data/
+
+# Documentation we do not need inside the runtime image
+docs/
+*.md
+!README.md
+!pyproject.toml

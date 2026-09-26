@@ -1,0 +1,40 @@
+services:
+  z-jev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: z-jev:latest
+    container_name: z-jev
+    restart: unless-stopped
+    ports:
+      # Host port 8080 -> container port 8000 (the in-container default).
+      - "${ZJEV_HOST_PORT:-8080}:8000"
+    environment:
+      # Path inside the container to the loaded checkpoint.
+      ZJEV_CHECKPOINT: ${ZJEV_CHECKPOINT:-/app/checkpoints/model.pt}
+      ZJEV_HOST: 0.0.0.0
+      ZJEV_PORT: "8000"
+      # Optional API key (uncomment to enable auth).
+      # ZJEV_API_KEY: ${ZJEV_API_KEY:-change-me-please}
+      # Tunable limits.
+      ZJEV_MAX_REQUEST_BYTES: "262144"
+      ZJEV_MAX_QUESTIONS: "32"
+      ZJEV_MAX_OPTIONS_PER_CHOICE: "16"
+      ZJEV_MAX_LEVELS_PER_SCORE: "8"
+      ZJEV_MAX_STATE_CHARS: "8192"
+      ZJEV_LOG_STATE_CHARS: "40"
+    volumes:
+      # Mount trained checkpoints + future JSONL data from the host.
+      - ./checkpoints:/app/checkpoints:ro
+      - ./data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

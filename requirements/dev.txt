@@ -1,0 +1,7 @@
+# Dev / CI extras (kept as a sibling file to cpu.txt so prod installs
+# never pull these).
+
+-r cpu.txt
+
+pytest>=7.4
+ruff>=0.4

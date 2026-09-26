@@ -1,0 +1,11 @@
+# Pinned lower bounds for a CPU-only install of z-jev.
+# Update these to track upstream stable releases; ``pyproject.toml``
+# remains the source of truth for the *minimum* versions.
+
+--index-url https://download.pytorch.org/whl/cpu
+
+torch>=2.5,<3.0
+pydantic>=2.5,<3.0
+fastapi>=0.100,<1.0
+uvicorn>=0.20,<1.0
+httpx>=0.25,<1.0
