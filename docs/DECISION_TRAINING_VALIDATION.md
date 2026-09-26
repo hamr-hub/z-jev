@@ -193,7 +193,7 @@ ECE 越小代表置信度与真实命中率越一致（`lora_train.py` 的验证
 
 ### 4.3 已知验证边界（诚实声明）
 
-- 744B 真实权重路径**未在真机执行**：glm5 模式的命令是既定方法，需多卡集群（BF16 权重约 1.4TB，建议 8×80GB 级 GPU 起步；4/8bit 量化可降 footprint）。
+- 744B 真实权重路径**未在真机执行**：glm5 模式的命令是既定方法。硬件为工程估算——权重 BF16 ~1.41TB / FP8 ~707GB / 8bit ~744GB / 4bit ~372GB；80GB 卡建议：BF16 LoRA 20-24 张、FP8/8bit 12-16 张、4bit QLoRA 6-8 张；全量 BF16 微调（含 AdamW 状态约 21-24TB）不现实；需多 TB NVMe 与 NVLink/IB，推理常驻需 FP8 ~9 张 / 4bit ~5 张。省钱路径：离线缓存 hidden states（单张 24GB 卡训头）或用 GLM-5.3-Flash（320B-A18B，4bit 4-6 张）。
 - tiny 训练基于合成词袋数据，用于证明架构与协议在 CPU 上端到端闭合，不代表真实业务精度。
 - 当前所有实跑均为 CPU；CUDA 路径可能存在未暴露的 shape/dtype 问题。
 - 校准为温度 + 边际公式；复杂分布可能需要 Platt/Dirichlet 再校准。

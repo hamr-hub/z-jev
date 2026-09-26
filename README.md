@@ -170,9 +170,15 @@ Data is JSONL — one labelled decision packet per line:
 A 20+ row sample lives at `examples/train_sample.jsonl`.
 
 ```bash
-# On a cluster that can host 744B-A40B (BF16 weights ~1.4 TB; plan for
-# 8x80GB-class GPUs minimum, more with full logit/head optimizer states;
-# 4-bit/8bit quantization lowers the weight footprint substantially):
+# Hardware estimate for 744B-A40B (engineering estimate, not measured):
+# weights BF16 ~1.41TB / FP8 ~707GB / 8bit ~744GB / 4bit ~372GB.
+# Recommended GPU counts (80GB cards, incl. activations/optimizer headroom):
+#   BF16 LoRA 20-24x80GB | FP8/8bit 12-16x80GB | 4bit QLoRA 6-8x80GB
+# Full BF16 fine-tuning (~21-24TB with AdamW states) is impractical.
+# Requires multi-TB NVMe and NVLink/IB (MoE all-to-all); inference serving
+# similarly needs FP8 ~9x80GB / 4bit ~5x80GB, weights always resident.
+# Cheaper paths: cache hidden states offline, train the head on one 24GB
+# card; or use GLM-5.3-Flash (320B-A18B), 4bit 4-6x80GB.
 z-jev-lora-train --backbone glm5 --model zai-org/GLM-5 \
     --train-file data/train.jsonl --val-file data/val.jsonl \
     --load-in-8bit --lora-rank 16 --lora-alpha 32 \
