@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "z-jev"
+version = "0.1.0"
+description = "Non-autoregressive decision heads on top of GLM-5 (and a tiny trainable replica)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "z-jev contributors"}]
+dependencies = [
+  "torch>=2.0",
+  "pydantic>=2.0",
+  "fastapi>=0.100",
+  "uvicorn>=0.20",
+  "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+hf = ["transformers>=4.40"]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+
+[project.scripts]
+z-jev-train = "z_jev.train:main"
+z-jev-infer = "z_jev.infer_cli:main"
+z-jev-serve = "z_jev.serve:main"
+
+[tool.setuptools.packages.find]
+include = ["z_jev*"]
+
+[tool.setuptools.package-data]
+z_jev = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

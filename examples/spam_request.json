@@ -1,0 +1,22 @@
+{
+  "state": "Free winner urgent click to claim your prize money lottery now",
+  "questions": {
+    "category": {
+      "type": "choice",
+      "instructions": "Classify the message as spam or ham",
+      "criteria": {
+        "spam": "Unsolicited marketing or phishing message",
+        "ham": "Legitimate personal or business communication"
+      }
+    },
+    "risk": {
+      "type": "score",
+      "instructions": "Estimate the operational risk of the situation",
+      "criteria": ["low", "medium", "high"]
+    },
+    "is_urgent": {
+      "type": "noul",
+      "instructions": "The message conveys urgency"
+    }
+  }
+}
