@@ -3,6 +3,10 @@
 > **Non-autoregressive decision heads on top of GLM-5** —
 > the Jev `Choice` / `Score` / `Noul` primitives as a single forward pass.
 
+[![CI](https://github.com/hamr-hub/z-jev/actions/workflows/ci.yml/badge.svg)](https://github.com/hamr-hub/z-jev/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 Z-Jev reimplements the [TypeSafe AI "Jev"](https://docs.typesafe.ai/primitives/)
 decision API as a **non-autoregressive decoder**: instead of asking a
 language model to generate free-form text and post-parse it, every
@@ -133,45 +137,66 @@ z_jev/
   data.py            # synthetic spam / risk / noul datasets
   train.py           # CLI trainer (CPU-friendly)
   infer_cli.py       # CLI single-request inference
-  serve.py           # FastAPI server: POST /v1/evaluate, GET /healthz
-tests/               # pytest suite (24 tests, ~30s on CPU)
-examples/            # example request JSON files + captured sample_output.json
+serve.py              # FastAPI server: POST /v1/evaluate, GET /healthz
+lora.py / lora_train.py  # LoRA math + frozen-GLM-5 adapter training CLI
+tests/               # pytest suite (protocol/heads/training/API/LoRA/hardening)
+examples/            # request JSON, sample output, train_sample.jsonl
+docs/DEPLOYMENT.md   # bare metal / Docker / compose / nginx / systemd
+Dockerfile, docker-compose.yml, Makefile
 scripts/smoke.sh     # lint + tests + train + inference + API smoke
 checkpoints/         # gitignored training output (keep .gitkeep)
 ```
 
 ---
 
-## Real GLM-5 (what would change with the real weights)
+## Real GLM-5 LoRA training (method, not exercised on this machine)
 
-GLM-5 (744B-A40B MoE, BF16 ≈ 1.4 TB) cannot be loaded on this machine. The
-adapter in `z_jev/backbone.py` is the only piece that ever touches the
-HF model:
+The production adaptation path is: **freeze the full GLM-5 backbone,
+inject LoRA adapters into its linear projections, and train the adapters
+together with the non-autoregressive decision head**. `z_jev/lora.py`
+implements LoRA directly (`W' = W + (alpha/r) B A`, `B` zero-init so an
+untrained adapter is mathematically identical to the base model); on a
+multi-GPU host `z_jev/lora_train.py` can instead use `peft`.
 
-```python
-from transformers import AutoConfig, AutoModel
-cfg = AutoConfig.from_pretrained("zai-org/GLM-5", trust_remote_code=True)
-model = AutoModel.from_pretrained(
-    "zai-org/GLM-5", trust_remote_code=True, torch_dtype=torch.bfloat16
-)
-# Then attach the decision heads:
-from z_jev import ZJevConfig, NonAutoregressiveDecisionHead
-zj = ZJevConfig(mode="glm5", glm5={"hidden_size": cfg.hidden_size, ...})
-head = NonAutoregressiveDecisionHead(zj)
-state_vec = model(input_ids).last_hidden_state[:, -1, :]   # or pool
-logits = head(state_vec, question_vecs, types)
+Data is JSONL — one labelled decision packet per line:
+
+```json
+{"state": "free prize click now", "answers": {
+  "category": {"type": "choice", "label": "spam"},
+  "risk": {"type": "score", "label": 2},
+  "is_urgent": {"type": "noul", "label": true}}}
 ```
 
-On a machine that *can* host GLM-5, the recommended path is
-**head-only fine-tuning**: freeze the backbone (LoRA optional), train
-just the head + state projection for a few thousand steps on labelled
-decisions. The state-projection layer in `ZJevModel` is what bridges
-GLM-5's `hidden_size` to the head's fixed dim, so swapping backbones
-does not require retraining the head.
+A 20+ row sample lives at `examples/train_sample.jsonl`.
 
-The `transformers` package is a soft dependency: if it is not installed,
-`GLM5Backbone(mode="glm5")` raises an informative `ImportError`
-explaining how to install `z-jev[hf]`. The `tiny` mode is unaffected.
+```bash
+# On a cluster that can host 744B-A40B (BF16 weights ~1.4 TB; plan for
+# 8x80GB-class GPUs minimum, more with full logit/head optimizer states;
+# 4-bit/8bit quantization lowers the weight footprint substantially):
+z-jev-lora-train --backbone glm5 --model zai-org/GLM-5 \
+    --train-file data/train.jsonl --val-file data/val.jsonl \
+    --load-in-8bit --lora-rank 16 --lora-alpha 32 \
+    --grad-accum 8 --steps 5000 --out checkpoints/glm5-lora
+
+# Same pipeline end-to-end on this machine, tiny backbone + built-in LoRA:
+z-jev-lora-train --backbone tiny \
+    --train-file examples/train_sample.jsonl \
+    --steps 40 --out checkpoints/lora-tiny
+```
+
+Checkpoints save the LoRA adapter and decision head separately (plus an
+optional `--save-merged` form); point `z-jev-serve --checkpoint` at the
+output directory to deploy. The GLM-5 commands have **not** been run on
+real hardware here — they are the prescribed method for downstream
+operators. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment
+(bare metal, Docker, compose, nginx, systemd, env vars, rollback).
+
+### Docker quick start
+
+```bash
+docker compose up -d --build          # serves on :8000, checkpoint via volume
+ZJEV_API_KEY=s3cret ...               # optional bearer-token auth
+```
 
 ---
 

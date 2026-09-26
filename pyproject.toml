@@ -26,6 +26,7 @@ dev = ["pytest>=7.0", "ruff>=0.4"]
 z-jev-train = "z_jev.train:main"
 z-jev-infer = "z_jev.infer_cli:main"
 z-jev-serve = "z_jev.serve:main"
+z-jev-lora-train = "z_jev.lora_train:main"
 
 [tool.setuptools.packages.find]
 include = ["z_jev*"]
