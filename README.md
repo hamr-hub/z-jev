@@ -188,8 +188,10 @@ Checkpoints save the LoRA adapter and decision head separately (plus an
 optional `--save-merged` form); point `z-jev-serve --checkpoint` at the
 output directory to deploy. The GLM-5 commands have **not** been run on
 real hardware here — they are the prescribed method for downstream
-operators. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment
-(bare metal, Docker, compose, nginx, systemd, env vars, rollback).
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment
+  (bare metal, Docker, compose, nginx, systemd, env vars, rollback).
+- [`docs/DECISION_TRAINING_VALIDATION.md`](docs/DECISION_TRAINING_VALIDATION.md)
+  for the full decision flow, training process, metrics and validation.
 
 ### Docker quick start
 
