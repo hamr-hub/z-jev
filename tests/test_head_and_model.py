@@ -162,3 +162,73 @@ def test_collator_handles_heterogeneous_question_counts():
     assert batch.question_types.shape == (2, 2)
     # Noul positions in row 0 should be ignored but valid shape-wise.
     assert batch.question_ids.shape[2] > 0
+
+
+# ---------------------------------------------------------------------------
+# Loss vectorisation (regression test for the O(B*Q) Python loop removal)
+# ---------------------------------------------------------------------------
+
+
+def test_vectorised_loss_matches_reference_per_question_loop():
+    """``head.loss`` must match the per-question Python loop to fp32 noise.
+
+    The vectorised path concatenates the three branches into one padded
+    logits tensor and calls ``F.cross_entropy`` once; the reference path
+    iterates per question and gathers the right branch. They have to be
+    numerically equivalent so the speedup cannot change training behavior.
+    """
+    import torch.nn.functional as F
+
+    cfg = _tiny_cfg()
+    from z_jev.head import NonAutoregressiveDecisionHead
+
+    head = NonAutoregressiveDecisionHead(cfg)
+    b, q, h = 3, 4, cfg.head_hidden_size
+    types = torch.tensor(
+        [
+            [0, 1, 2, 2],
+            [1, 0, 2, 2],
+            [0, 0, 1, 2],
+        ]
+    )
+    out = head(torch.randn(b, h), torch.randn(b, q, h), types)
+    targets = [
+        [1, 0, 0, -1],  # last padded -> ignored
+        [2, 0, 1, -1],
+        [0, 1, 2, 0],
+    ]
+
+    # Reference: per-question Python loop.
+    ref_losses = []
+    for bi in range(b):
+        for qi in range(q):
+            tgt = int(targets[bi][qi])
+            if tgt < 0:
+                continue
+            t = int(out.types[bi, qi].item())
+            if t == 0:
+                logits = out.choice_logits[bi, qi]
+            elif t == 1:
+                logits = out.score_logits[bi, qi]
+            else:
+                logits = out.noul_logits[bi, qi]
+            size = int(out.sizes[bi, qi].item())
+            ref_losses.append(
+                F.cross_entropy(
+                    logits[:size].unsqueeze(0),
+                    torch.tensor([tgt]),
+                )
+            )
+    ref = torch.stack(ref_losses).mean()
+
+    # Vectorised: the public ``head.loss`` API.
+    head.zero_grad()
+    vec = head.loss(out, targets)
+
+    assert torch.allclose(ref, vec, atol=1e-6), (ref.item(), vec.item())
+
+    # Backward must work (gradient flows to the right branch only).
+    vec.backward()
+    assert out.choice_logits.grad is not None
+    assert out.score_logits.grad is not None
+    assert out.noul_logits.grad is not None

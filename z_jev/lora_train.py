@@ -456,6 +456,16 @@ def train(args: argparse.Namespace) -> dict:
         file=sys.stderr,
     )
 
+    # Tokenizer for ``collate_requests``. The tiny path owns the real
+    # ByteTokenizer; the GLM-5 path uses the real HF tokenizer but the
+    # collator only needs padding constants, so a shim with the same
+    # surface is enough. Picking it up front keeps the train loop free
+    # of branchy plumbing.
+    if args.backbone == "tiny":
+        tokenizer = model.tokenizer
+    else:
+        tokenizer = _ByteTokenizerShim()
+
     # Dataset
     train_examples = load_jsonl_dataset(args.train_file)
     val_examples = load_jsonl_dataset(args.val_file) if args.val_file else []
@@ -488,19 +498,11 @@ def train(args: argparse.Namespace) -> dict:
         for batch_examples in _batches(train_examples, args.batch_size):
             if step >= args.steps:
                 break
-            try:
-                fb = collate_requests(
-                    [ex.request for ex in batch_examples],
-                    model.tokenizer if args.backbone == "tiny" else _ByteTokenizerShim(),
-                    max_state_len=args.max_state_len,
-                )
-            except Exception:
-                # GLM-5 path uses a shim tokenizer (we only need padding).
-                fb = collate_requests(
-                    [ex.request for ex in batch_examples],
-                    _ByteTokenizerShim(),
-                    max_state_len=args.max_state_len,
-                )
+            fb = collate_requests(
+                [ex.request for ex in batch_examples],
+                tokenizer,
+                max_state_len=args.max_state_len,
+            )
             targets = [ex.targets for ex in batch_examples]
             outputs = forward_fn(fb)
             loss = _compute_loss(head, outputs, targets) / args.grad_accum
