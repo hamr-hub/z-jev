@@ -46,6 +46,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from z_jev.backbone import ByteTokenizer
 from z_jev.config import TinyGLMConfig, ZJevConfig
 from z_jev.head import NonAutoregressiveDecisionHead
 from z_jev.lora import (
@@ -79,9 +80,6 @@ class JsonlExample:
     targets: list[int]
 
 
-_PRIMITIVE_TYPE_TO_INDEX = {"choice": 0, "score": 1, "noul": 2}
-
-
 def _label_to_target(spec: dict[str, Any], options: list[str] | None) -> int:
     """Convert a JSONL label to the integer target used by the head."""
     label = spec.get("label")
@@ -91,12 +89,14 @@ def _label_to_target(spec: dict[str, Any], options: list[str] | None) -> int:
         # criteria dict (we use a sorted key list so the order is stable).
         if options is None:
             raise ValueError("choice example missing 'options' for label mapping")
-        if label not in options:
+        if label is None or label not in options:
             raise ValueError(f"choice label {label!r} not in options {options}")
         return options.index(label)
     if qtype == "score":
         if isinstance(label, int):
             return label
+        if label is None:
+            raise ValueError("score label must be int, got None")
         # Allow 1-indexed ints in JSON by accepting ints 0..len-1 OR 1..n.
         try:
             n = int(label)
@@ -221,10 +221,10 @@ def _build_glm5_with_lora(
     Raises an informative error when transformers/peft are missing.
     """
     if not try_import_transformers()[0]:
-        ok, hint = try_import_transformers()
+        _, hint = try_import_transformers()
         raise ImportError(hint)
     if not try_import_peft()[0]:
-        ok, hint = try_import_peft()
+        _, hint = try_import_peft()
         raise ImportError(hint)
     import peft  # type: ignore
     import transformers  # type: ignore
@@ -389,6 +389,12 @@ def train(args: argparse.Namespace) -> dict:
         file=sys.stderr,
     )
 
+    # Declare up front so downstream branches (eval / save) can reference
+    # them by name without the type checker complaining about possibly-
+    # unbound locals.
+    model: ZJevModel | None = None
+    hf_model = None
+
     if args.backbone == "tiny":
         model, lora_targets = build_tiny_model_with_lora(
             ZJevConfig(
@@ -462,6 +468,9 @@ def train(args: argparse.Namespace) -> dict:
     # surface is enough. Picking it up front keeps the train loop free
     # of branchy plumbing.
     if args.backbone == "tiny":
+        # ``model`` is guaranteed set by the tiny branch above; the assertion
+        # is here only to keep static type-checkers (Pyright / mypy) honest.
+        assert model is not None
         tokenizer = model.tokenizer
     else:
         tokenizer = _ByteTokenizerShim()
@@ -655,22 +664,20 @@ def _question_vecs(hf_model, batch) -> torch.Tensor:
     return summed / counts
 
 
-class _ByteTokenizerShim:
-    """Minimal ByteTokenizer-shaped shim for the GLM-5 forward path.
+class _ByteTokenizerShim(ByteTokenizer):
+    """Drop-in :class:`ByteTokenizer` for the GLM-5 forward path.
 
     The real GLM-5 model uses its own tokenizer; this shim only needs to
-    match the small surface :func:`collate_requests` touches
-    (``encode``/``type_id``/vocab constants).
+    satisfy the small surface :func:`collate_requests` touches
+    (``encode``/``type_id``/vocab constants). Inheriting from
+    :class:`ByteTokenizer` makes the duck-typed contract explicit and
+    silences Pyright's structural-type complaints about
+    ``collate_requests`` accepting "any ByteTokenizer-like".
     """
 
-    PAD = 0
-    BOS = 1
-    EOS = 2
-    CHOICE = 3
-    SCORE = 4
-    NOUL = 5
-    NUM_SPECIAL = 8
-    vocab_size = 256 + NUM_SPECIAL
+    # PAD/BOS/EOS/CHOICE/SCORE/NOUL/SEP/NUM_SPECIAL/base_vocab_size/vocab_size
+    # are inherited unchanged; only ``encode`` is overridden to keep the
+    # same behaviour as before.
 
     def encode(self, text: str, add_bos: bool = True, add_eos: bool = True) -> list[int]:  # noqa: D401
         ids: list[int] = [self.BOS] if add_bos else []
@@ -679,9 +686,6 @@ class _ByteTokenizerShim:
         if add_eos:
             ids.append(self.EOS)
         return ids
-
-    def type_id(self, qtype: str) -> int:
-        return {"choice": self.CHOICE, "score": self.SCORE, "noul": self.NOUL}[qtype]
 
 
 # ---------------------------------------------------------------------------
