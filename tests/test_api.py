@@ -63,11 +63,21 @@ def test_evaluate_returns_503_when_no_checkpoint():
         r = client.get("/healthz")
         assert r.status_code == 200
         assert r.json()["checkpoint_loaded"] is False
+        # /readyz should be 503 until a checkpoint loads.
+        r2 = client.get("/readyz")
+        assert r2.status_code == 503
+        assert r2.json()["status"] == "loading"
         r = client.post(
             "/v1/evaluate",
             json={
                 "state": {"text": "x"},
-                "questions": {},
+                "questions": {
+                    "is_urgent": {"type": "noul", "instructions": "urgent?"}
+                },
             },
         )
         assert r.status_code == 503
+        # Error envelope shape.
+        body = r.json()
+        assert body["error"]["code"] == "checkpoint_not_loaded"
+        assert "request_id" in body["error"]
