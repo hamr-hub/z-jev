@@ -29,3 +29,6 @@ checkpoints/
 .idea/
 *.swp
 .DS_Store
+._*
+# macOS resource forks on external / cross-platform mounts.
+._.DS_Store
